@@ -55,8 +55,8 @@ func (i *Interceptor) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 	req := &ctx.Request
 	res := &ctx.Response
 
-	req.SetHost(u.Host)
 	req.Header.SetHost(u.Host)
+	req.SetRequestURI(endpoint.Url)
 	req.SetBody(bodyFiltered)
 
 	client := &fasthttp.HostClient{
