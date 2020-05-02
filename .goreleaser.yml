@@ -1,0 +1,15 @@
+build:
+  binary: sentryceptor
+  goos:
+    - linux
+  goarch:
+    - amd64
+  hooks:
+    post: .build/goreleaser_build_hooks_post.sh
+archive:
+  replacements:
+    darwin: macOS
+    386: 32-bit
+    amd64: 64-bit
+checksum:
+  name_template: 'checksums.txt'
