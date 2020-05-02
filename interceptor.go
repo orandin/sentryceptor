@@ -66,11 +66,11 @@ func (i *Interceptor) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 	err = client.Do(req, res)
 	if err != nil {
 		ctx.Error("Server Error", fasthttp.StatusInternalServerError)
-		log.Fatal(fmt.Sprintf("ServeHTTP: %v", err))
+		log.Warn(fmt.Sprintf("ServeHTTP: %v", err))
+	} else {
+		log.InfoWithFields("Response received", func(e onelog.Entry) {
+			e.Int("status", res.StatusCode())
+			e.String("url", endpoint.Url)
+		})
 	}
-
-	log.InfoWithFields("Response received", func(e onelog.Entry) {
-		e.Int("status", res.StatusCode())
-		e.String("host", res.RemoteAddr().String())
-	})
 }
