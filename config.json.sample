@@ -2,6 +2,12 @@
     "host": "localhost",
     "port": 8080,
 
+  "sentry": {
+        "dsn": "",
+        "environment": "prod",
+        "debug": false
+    },
+
     "router": {
         "/YOUR_ENDPOINT": {
             "url": "http://sentry.io/TO_UPDATE",
