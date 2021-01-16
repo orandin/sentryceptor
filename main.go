@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/francoispqt/onelog"
@@ -37,10 +38,11 @@ func main() {
 
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 
-	handler := &Interceptor{}
+	handler := &Interceptor{
+		clientHTTP: http.Client{},
+	}
 
 	fastHTTPhandler := handler.HandleFastHTTP
-
 	if config.Sentry.Dsn != "" {
 		err = sentry.Init(
 			sentry.ClientOptions{

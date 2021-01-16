@@ -1,18 +1,34 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"time"
+
 	"github.com/francoispqt/onelog"
-	"github.com/francoispqt/onelog/log"
+	"github.com/getsentry/sentry-go"
+	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
-	"net/url"
 )
 
-type Interceptor struct{}
+type Interceptor struct {
+	clientHTTP http.Client
+}
 
 func (i *Interceptor) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
-	log.Info(fmt.Sprintf(`%s %s`, string(ctx.Method()), ctx.URI().String()))
+	requestID := uuid.New().String()
+	log := Logger.With(func(e onelog.Entry) {
+		e.String("time", time.Now().Format(time.RFC3339))
+		e.String("internalRequestID", requestID)
+	})
+
+	log.InfoWithFields("Sentry event received", func(e onelog.Entry) {
+		e.String("method", string(ctx.Method()))
+		e.String("path", string(ctx.URI().Path()))
+	})
 
 	endpoint, ok := config.Router[string(ctx.Path())]
 	if !ok {
@@ -21,13 +37,16 @@ func (i *Interceptor) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	u, err := url.Parse(endpoint.Url)
+	dsn, err := sentry.NewDsn(endpoint.Url)
 	if err != nil {
 		log.Error(err.Error())
 		ctx.Error(err.Error(), fasthttp.StatusNotFound)
 		return
 	}
 
+	url := dsn.StoreAPIURL()
+
+	// Get body
 	var body map[string]interface{}
 
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil {
@@ -51,26 +70,33 @@ func (i *Interceptor) HandleFastHTTP(ctx *fasthttp.RequestCtx) {
 
 	bodyFiltered, _ := json.Marshal(body)
 
-	// Forward the request filtered
-	req := &ctx.Request
-	res := &ctx.Response
+	// Send filtered event to Sentry
+	request, _ := http.NewRequest(
+		http.MethodPost,
+		url.String(),
+		bytes.NewBuffer(bodyFiltered),
+	)
 
-	req.Header.SetHost(u.Host)
-	req.SetRequestURI(endpoint.Url)
-	req.SetBody(bodyFiltered)
-
-	client := &fasthttp.HostClient{
-		Addr: u.Host,
+	for headerKey, headerValue := range dsn.RequestHeaders() {
+		request.Header.Set(headerKey, headerValue)
 	}
 
-	err = client.Do(req, res)
+	response, err := i.clientHTTP.Do(request)
 	if err != nil {
-		ctx.Error("Server Error", fasthttp.StatusInternalServerError)
-		log.Warn(fmt.Sprintf("ServeHTTP: %v", err))
-	} else {
-		log.InfoWithFields("Response received", func(e onelog.Entry) {
-			e.Int("status", res.StatusCode())
-			e.String("url", endpoint.Url)
-		})
+		log.Warn(fmt.Sprintf("Error client.Do: %v", err))
 	}
+
+	log.InfoWithFields("Response received from Sentry", func(e onelog.Entry) {
+		e.Int("status", response.StatusCode)
+		e.String("forwardTo", request.URL.String())
+	})
+
+	responseBody, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		log.Warn(fmt.Sprintf("Error reading body: %v", err))
+		responseBody = []byte("")
+	}
+
+	ctx.SetStatusCode(response.StatusCode)
+	ctx.SetBody(responseBody)
 }
